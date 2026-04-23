@@ -15,6 +15,10 @@ points = PackedVector3Array(0.65, 0.249961, 1.12499, 0.620605, 0.249961, 1.19562
 collision_layer = 2
 physics_material_override = ExtResource("1_x7uf8")
 script = ExtResource("2_u0012")
+max_steer = 0.25
+steer_damping = 1.5
+front_wheel_grip = 30.0
+rear_wheel_grip = 20.0
 
 [node name="CarModel" parent="." unique_id=1777388840 instance=ExtResource("2_rytg7")]
 transform = Transform3D(0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0)
