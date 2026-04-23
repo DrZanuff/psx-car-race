@@ -32,6 +32,10 @@ const PROTECTED_BORDER_MODULES := 1
 const KEEP_CENTER_CROSS := true
 const PRESERVE_MAIN_INTERSECTIONS := true
 const MIN_LARGE_BLOCK_MODULES := 4
+const TREE_TERRAIN_SMALL_ITEM_NAME := &"TreeTerrainSmall"
+const TREE_TERRAIN_LARGE_ITEM_NAME := &"TreeTerrainLarge"
+const GENERATED_TREE_AREAS_NAME := "GeneratedTreeAreas"
+const GENERATED_TREE_AREA_META := &"generated_by_city_gridmap_applier"
 
 ## GridMap that receives road tiles. Its MeshLibrary must contain the named road items below.
 @export var roads_grid_map: GridMap
@@ -76,6 +80,18 @@ const MIN_LARGE_BLOCK_MODULES := 4
 ## Extra cells added to each measured building footprint during overlap checks. Raise this if roofs/walls still clip.
 @export_range(0, 16, 1) var building_footprint_padding_cells: int = 0
 
+@export_group("Tree Areas")
+## Chance per buildable module to place TreeTerrainSmall or TreeTerrainLarge instead of a building.
+@export_range(0.0, 1.0, 0.01) var tree_area_chance: float = 0.18
+## Scene node whose Mesh will be copied into generated MultiMeshInstance3D tree areas.
+@export var tree_source_mesh_node: Node3D
+## If true, each tree gets a random Y rotation inside the terrain tile.
+@export var tree_random_rotation: bool = true
+## Scale variance around 1.0 for each tree. For example, 0.2 produces random scales from 0.8 to 1.2.
+@export_range(0.0, 1.0, 0.01) var tree_random_scale: float = 0.0
+## Number of tree instances generated inside each TreeTerrainSmall or TreeTerrainLarge GridMap tile.
+@export_range(0, 1024, 1) var tree_amount_per_area: int = 64
+
 @export_group("Actions")
 ## Clears both GridMaps and applies a newly generated city with the current inspector settings.
 @export_tool_button("Apply City", "GridMap") var apply_city_action = _apply_city
@@ -112,6 +128,7 @@ func _clear_city() -> void:
 		roads_grid_map.clear()
 	if buildings_grid_map != null:
 		buildings_grid_map.clear()
+	_clear_generated_tree_areas()
 	_push_status("Cleared city GridMaps.")
 
 
@@ -392,12 +409,14 @@ func _apply_roads(road_modules: Dictionary, road_ids: Dictionary, origin: Vector
 
 func _apply_buildings(origin: Vector2i, occupied: Dictionary) -> void:
 	var building_ids := _building_item_ids()
-	if building_ids.is_empty():
+	var tree_terrain_ids := _tree_terrain_item_ids()
+	if building_ids.is_empty() and tree_terrain_ids.is_empty():
 		_push_status("No building items available.")
 		return
 
 	var claimed_modules := {}
-	_apply_large_block_buildings(origin, occupied, building_ids, claimed_modules)
+	if not building_ids.is_empty():
+		_apply_large_block_buildings(origin, occupied, building_ids, claimed_modules)
 
 	for mx in range(module_width):
 		for mz in range(module_depth):
@@ -409,7 +428,15 @@ func _apply_buildings(origin: Vector2i, occupied: Dictionary) -> void:
 			if claimed_modules.has(module_key):
 				continue
 
+			if not tree_terrain_ids.is_empty() and _rng.randf() <= tree_area_chance:
+				var tree_candidate := _pick_tree_terrain_candidate(module_pos, origin, occupied, tree_terrain_ids)
+				if not tree_candidate.is_empty():
+					_place_tree_terrain_candidate(tree_candidate, occupied)
+					continue
+
 			if _rng.randf() > building_density:
+				continue
+			if building_ids.is_empty():
 				continue
 
 			var candidate := _pick_building_candidate(module_pos, origin, occupied, building_ids)
@@ -553,9 +580,55 @@ func _building_item_ids() -> Array[int]:
 	var library := buildings_grid_map.mesh_library
 
 	for item_id in library.get_item_list():
+		var item_name := library.get_item_name(item_id)
+		if item_name == TREE_TERRAIN_SMALL_ITEM_NAME or item_name == TREE_TERRAIN_LARGE_ITEM_NAME:
+			continue
 		ids.append(item_id)
 
 	return ids
+
+
+func _tree_terrain_item_ids() -> Array[int]:
+	var ids: Array[int] = []
+	var large_id := _find_item_id(buildings_grid_map.mesh_library, TREE_TERRAIN_LARGE_ITEM_NAME)
+	var small_id := _find_item_id(buildings_grid_map.mesh_library, TREE_TERRAIN_SMALL_ITEM_NAME)
+
+	if large_id != -1:
+		ids.append(large_id)
+	if small_id != -1:
+		ids.append(small_id)
+
+	return ids
+
+
+func _pick_tree_terrain_candidate(
+	module_pos: Vector2i,
+	origin: Vector2i,
+	occupied: Dictionary,
+	tree_terrain_ids: Array[int]
+) -> Dictionary:
+	var center_cell := _module_center_cell(module_pos, origin)
+	for item_id in tree_terrain_ids:
+		var bounds := _item_bounds_cells(buildings_grid_map, item_id, 0)
+		var placed_cell := _building_cell_for_center_cell(center_cell, bounds)
+		if _bounds_are_free(occupied, placed_cell, bounds):
+			return {
+				"item_id": item_id,
+				"bounds": bounds,
+				"placed_cell": placed_cell,
+			}
+
+	return {}
+
+
+func _place_tree_terrain_candidate(candidate: Dictionary, occupied: Dictionary) -> void:
+	var item_id := int(candidate["item_id"])
+	var bounds: Rect2i = candidate["bounds"]
+	var placed_cell: Vector2i = candidate["placed_cell"]
+
+	buildings_grid_map.set_cell_item(Vector3i(placed_cell.x, 0, placed_cell.y), item_id, 0)
+	_mark_bounds(occupied, placed_cell, bounds, building_spacing_cells)
+	_populate_tree_area(item_id, placed_cell, bounds)
 
 
 func _open_module_components() -> Array:
@@ -806,6 +879,118 @@ func _bounds_are_free(occupied: Dictionary, pivot_cell: Vector2i, bounds: Rect2i
 			if occupied.has(Vector2i(x, z)):
 				return false
 	return true
+
+
+func _populate_tree_area(item_id: int, placed_cell: Vector2i, bounds: Rect2i) -> void:
+	var source_mesh_instance := _tree_source_mesh_instance()
+	if source_mesh_instance == null or source_mesh_instance.mesh == null:
+		if tree_amount_per_area > 0:
+			_push_status("tree_source_mesh_node is not assigned to a MeshInstance3D; skipping tree MultiMesh.")
+		return
+
+	var amount := maxi(0, _int_or(tree_amount_per_area, 64))
+	if amount <= 0:
+		return
+
+	var parent := _ensure_generated_tree_parent()
+	if parent == null:
+		return
+
+	var tree_area := MultiMeshInstance3D.new()
+	tree_area.name = "Trees_%s_%d_%d" % [
+		buildings_grid_map.mesh_library.get_item_name(item_id),
+		placed_cell.x,
+		placed_cell.y,
+	]
+	tree_area.set_meta(GENERATED_TREE_AREA_META, true)
+	parent.add_child(tree_area)
+	_assign_generated_owner(tree_area)
+
+	var area_origin := buildings_grid_map.map_to_local(Vector3i(placed_cell.x, 0, placed_cell.y))
+	tree_area.global_transform = Transform3D(Basis(), buildings_grid_map.to_global(area_origin))
+	tree_area.material_override = source_mesh_instance.material_override
+
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_3D
+	multimesh.mesh = source_mesh_instance.mesh
+	multimesh.instance_count = amount
+	tree_area.multimesh = multimesh
+
+	for index in range(amount):
+		multimesh.set_instance_transform(index, _random_tree_transform_in_area(bounds))
+
+
+func _random_tree_transform_in_area(bounds: Rect2i) -> Transform3D:
+	var cell_size := buildings_grid_map.cell_size
+	var offset := Vector3(
+		(float(bounds.position.x) + _rng.randf() * float(bounds.size.x)) * cell_size.x,
+		0.0,
+		(float(bounds.position.y) + _rng.randf() * float(bounds.size.y)) * cell_size.z
+	)
+	var rotation := _rng.randf() * TAU if tree_random_rotation else 0.0
+	var scale_variance := clampf(_float_or(tree_random_scale, 0.0), 0.0, 1.0)
+	var scale := 1.0 + _rng.randf_range(-scale_variance, scale_variance)
+	var basis := Basis().rotated(Vector3.UP, rotation).scaled(Vector3.ONE * scale)
+	return Transform3D(basis, offset)
+
+
+func _tree_source_mesh_instance() -> MeshInstance3D:
+	if tree_source_mesh_node == null:
+		return null
+	if tree_source_mesh_node is MeshInstance3D:
+		return tree_source_mesh_node as MeshInstance3D
+	return _find_first_mesh_instance(tree_source_mesh_node)
+
+
+func _find_first_mesh_instance(node: Node) -> MeshInstance3D:
+	for child in node.get_children():
+		if child is MeshInstance3D:
+			return child as MeshInstance3D
+
+		var child_mesh := _find_first_mesh_instance(child)
+		if child_mesh != null:
+			return child_mesh
+
+	return null
+
+
+func _ensure_generated_tree_parent() -> Node3D:
+	var parent := buildings_grid_map.get_parent()
+	if parent == null:
+		return null
+
+	var existing := parent.get_node_or_null(GENERATED_TREE_AREAS_NAME)
+	if existing != null and existing is Node3D:
+		return existing as Node3D
+
+	var generated := Node3D.new()
+	generated.name = GENERATED_TREE_AREAS_NAME
+	generated.set_meta(GENERATED_TREE_AREA_META, true)
+	parent.add_child(generated)
+	_assign_generated_owner(generated)
+	return generated
+
+
+func _clear_generated_tree_areas() -> void:
+	if buildings_grid_map == null or buildings_grid_map.get_parent() == null:
+		return
+
+	var parent := buildings_grid_map.get_parent()
+	var generated := parent.get_node_or_null(GENERATED_TREE_AREAS_NAME)
+	if generated == null:
+		return
+
+	generated.free()
+
+
+func _assign_generated_owner(node: Node) -> void:
+	if not Engine.is_editor_hint():
+		return
+
+	var scene_owner := owner
+	if scene_owner == null and get_tree() != null:
+		scene_owner = get_tree().edited_scene_root
+	node.owner = scene_owner
 
 
 func _transformed_aabb(aabb: AABB, transform: Transform3D) -> AABB:
