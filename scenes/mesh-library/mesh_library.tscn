@@ -9,7 +9,7 @@
 [ext_resource type="Texture2D" uid="uid://4d43oj6lttbk" path="res://assets/urban/buildings_prebuild/flat_square_concrete_houses.png" id="7_r04f4"]
 [ext_resource type="Texture2D" uid="uid://bnnqd0th4c1ce" path="res://assets/urban/buildings_prebuild/flat_square_concrete_alt_houses.png" id="8_pjmy0"]
 [ext_resource type="Texture2D" uid="uid://b7kqk41n57qwe" path="res://assets/urban/buildings_prebuild/hangar1_houses.png" id="9_iddow"]
-[ext_resource type="ArrayMesh" path="res://scenes/mesh-lwff" id="10_58hye"]
+[ext_resource type="ArrayMesh" uid="uid://2xiy3dxuceum" path="res://assets/urban/bus_stops/busstop.fbx" id="10_58hye"]
 [ext_resource type="Texture2D" uid="uid://p862jclvl1cc" path="res://assets/urban/bus_stops/busstop_0.png" id="11_sg5lw"]
 [ext_resource type="Texture2D" uid="uid://ctlho55lara4c" path="res://assets/skyscraper_pack/textures/building_01.png" id="16_vpq7p"]
 [ext_resource type="Texture2D" uid="uid://bgmoy4ryqc7cx" path="res://assets/urban/cones_barriers/concrete_barriers/jersey_barrier_concrete_barriers.png" id="17_alon8"]

@@ -7011,6 +7011,7 @@ transform = Transform3D(1, 0, 0, 0, -0.40205964, 0.9156135, 0, -0.9156135, -0.40
 light_color = Color(0.9068353, 0.92820036, 0.95463413, 1)
 
 [node name="Car" parent="." unique_id=2043055513 instance=ExtResource("2_0xm2m")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.77963686, 0)
 axis_lock_angular_x = true
 axis_lock_angular_z = true
 mass = 150.0
