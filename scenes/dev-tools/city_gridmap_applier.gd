@@ -80,6 +80,12 @@ const GENERATED_TREE_AREA_META := &"generated_by_city_gridmap_applier"
 ## Extra cells added to each measured building footprint during overlap checks. Raise this if roofs/walls still clip.
 @export_range(0, 16, 1) var building_footprint_padding_cells: int = 0
 
+@export_group("Border Buildings")
+## Extra outer layers of large buildings placed outside module_width/module_depth so the player cannot leave the generated city.
+@export_range(0, 8, 1) var border_building_layers: int = 1
+## Cell gap between border buildings. Keep this near 0 so the border buildings almost touch.
+@export_range(0, 8, 1) var border_building_spacing_cells: int = 0
+
 @export_group("Tree Areas")
 ## Chance per buildable module to place TreeTerrainSmall or TreeTerrainLarge instead of a building.
 @export_range(0.0, 1.0, 0.01) var tree_area_chance: float = 0.18
@@ -120,6 +126,7 @@ func _apply_city() -> void:
 
 	_apply_roads(road_modules, road_ids, origin, occupied)
 	_apply_buildings(origin, occupied)
+	_apply_border_buildings(origin, occupied)
 	_push_status("Applied city: %d road modules, %d occupied cells." % [road_modules.size(), occupied.size()])
 
 
@@ -487,6 +494,95 @@ func _apply_large_block_buildings(
 			claimed_modules[module_pos] = true
 
 
+func _apply_border_buildings(origin: Vector2i, occupied: Dictionary) -> void:
+	var layers := maxi(0, _int_or(border_building_layers, 1))
+	if layers <= 0:
+		return
+
+	var variants := _border_building_variants(_building_item_ids())
+	if variants.is_empty():
+		_push_status("No large building items available for border generation.")
+		return
+
+	var city_rect := _city_bounds_cells(origin)
+	var layer_stride := _border_layer_stride(variants)
+	for layer in range(layers):
+		_apply_horizontal_border_row(variants, occupied, city_rect, layer, layer_stride, true)
+		_apply_horizontal_border_row(variants, occupied, city_rect, layer, layer_stride, false)
+		_apply_vertical_border_row(variants, occupied, city_rect, layer, layer_stride, true)
+		_apply_vertical_border_row(variants, occupied, city_rect, layer, layer_stride, false)
+
+
+func _apply_horizontal_border_row(
+	variants: Array,
+	occupied: Dictionary,
+	city_rect: Rect2i,
+	layer: int,
+	layer_stride: int,
+	is_top: bool
+) -> void:
+	var spacing := maxi(0, _int_or(border_building_spacing_cells, 0))
+	var layer_offset := layer * layer_stride
+	var current_x := city_rect.position.x - layer_offset
+	var end_x := city_rect.position.x + city_rect.size.x + layer_offset
+	var inner_edge_y := city_rect.position.y - layer_offset if is_top else city_rect.position.y + city_rect.size.y + layer_offset
+	var guard := 0
+
+	while current_x < end_x and guard < 4096:
+		guard += 1
+		var variant := _random_border_variant(variants)
+		var bounds: Rect2i = variant["bounds"]
+		var pivot_y := inner_edge_y + spacing - bounds.position.y
+		if is_top:
+			pivot_y = inner_edge_y - spacing - (bounds.position.y + bounds.size.y)
+		var pivot_cell := Vector2i(current_x - bounds.position.x, pivot_y)
+
+		_try_place_border_building(variant, pivot_cell, occupied)
+		current_x += maxi(1, bounds.size.x + spacing)
+
+
+func _apply_vertical_border_row(
+	variants: Array,
+	occupied: Dictionary,
+	city_rect: Rect2i,
+	layer: int,
+	layer_stride: int,
+	is_left: bool
+) -> void:
+	var spacing := maxi(0, _int_or(border_building_spacing_cells, 0))
+	var layer_offset := layer * layer_stride
+	var current_z := city_rect.position.y - layer_offset
+	var end_z := city_rect.position.y + city_rect.size.y + layer_offset
+	var inner_edge_x := city_rect.position.x - layer_offset if is_left else city_rect.position.x + city_rect.size.x + layer_offset
+	var guard := 0
+
+	while current_z < end_z and guard < 4096:
+		guard += 1
+		var variant := _random_border_variant(variants)
+		var bounds: Rect2i = variant["bounds"]
+		var pivot_x := inner_edge_x + spacing - bounds.position.x
+		if is_left:
+			pivot_x = inner_edge_x - spacing - (bounds.position.x + bounds.size.x)
+		var pivot_cell := Vector2i(pivot_x, current_z - bounds.position.y)
+
+		_try_place_border_building(variant, pivot_cell, occupied)
+		current_z += maxi(1, bounds.size.y + spacing)
+
+
+func _try_place_border_building(variant: Dictionary, pivot_cell: Vector2i, occupied: Dictionary) -> bool:
+	var bounds: Rect2i = variant["bounds"]
+	if not _bounds_are_free(occupied, pivot_cell, bounds):
+		return false
+
+	buildings_grid_map.set_cell_item(
+		Vector3i(pivot_cell.x, 0, pivot_cell.y),
+		int(variant["item_id"]),
+		int(variant["orientation"])
+	)
+	_mark_bounds(occupied, pivot_cell, bounds, 0)
+	return true
+
+
 func _road_connection_mask(module_pos: Vector2i, road_modules: Dictionary) -> int:
 	var mask := 0
 	if road_modules.has(module_pos + Vector2i(0, -1)):
@@ -599,6 +695,64 @@ func _tree_terrain_item_ids() -> Array[int]:
 		ids.append(small_id)
 
 	return ids
+
+
+func _border_building_variants(building_ids: Array[int]) -> Array:
+	var variants := []
+	var largest_area := 0
+
+	for item_id in building_ids:
+		if _is_border_excluded_item(item_id):
+			continue
+
+		for rotation_quarters in range(4):
+			var bounds := _item_bounds_cells(buildings_grid_map, item_id, rotation_quarters)
+			var area := bounds.size.x * bounds.size.y
+			largest_area = maxi(largest_area, area)
+			variants.append({
+				"item_id": item_id,
+				"rotation_quarters": rotation_quarters,
+				"orientation": _orthogonal_y(buildings_grid_map, rotation_quarters),
+				"bounds": bounds,
+				"area": area,
+			})
+
+	if variants.is_empty():
+		return []
+
+	var threshold := maxi(1, int(round(float(largest_area) * 0.55)))
+	var large_variants := []
+	for variant in variants:
+		if int(variant["area"]) >= threshold:
+			large_variants.append(variant)
+
+	return large_variants
+
+
+func _is_border_excluded_item(item_id: int) -> bool:
+	var item_name := String(buildings_grid_map.mesh_library.get_item_name(item_id)).to_lower()
+	return (
+		item_name.contains("hangar")
+		or item_name.contains("hanger")
+		or item_name.contains("tree")
+		or item_name.contains("terrain")
+		or item_name.contains("shack")
+		or item_name.contains("leanto")
+	)
+
+
+func _border_layer_stride(variants: Array) -> int:
+	var stride := road_stride_cells
+	for variant in variants:
+		var bounds: Rect2i = variant["bounds"]
+		stride = maxi(stride, bounds.size.x)
+		stride = maxi(stride, bounds.size.y)
+	return stride
+
+
+func _random_border_variant(variants: Array) -> Dictionary:
+	var variant: Dictionary = variants[_rng.randi_range(0, variants.size() - 1)]
+	return variant
 
 
 func _pick_tree_terrain_candidate(
@@ -859,6 +1013,14 @@ func _city_origin() -> Vector2i:
 	var width_cells := (module_width - 1) * road_stride_cells
 	var depth_cells := (module_depth - 1) * road_stride_cells
 	return Vector2i(-int(floor(float(width_cells) * 0.5)), -int(floor(float(depth_cells) * 0.5)))
+
+
+func _city_bounds_cells(origin: Vector2i) -> Rect2i:
+	var half_stride := int(floor(float(road_stride_cells) * 0.5))
+	return Rect2i(
+		origin - Vector2i(half_stride, half_stride),
+		Vector2i(module_width * road_stride_cells, module_depth * road_stride_cells)
+	)
 
 
 func _module_center_cell(module_pos: Vector2i, origin: Vector2i) -> Vector2i:
