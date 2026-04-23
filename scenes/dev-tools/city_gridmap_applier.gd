@@ -20,6 +20,18 @@ const ROAD_STRAIGHT_MASK := DIR_N | DIR_S
 const ROAD_CORNER_MASK := DIR_E | DIR_S
 const ROAD_TJUNCTION_MASK := DIR_N | DIR_E | DIR_S
 const ROAD_JUNCTION_MASK := DIR_N | DIR_E | DIR_S | DIR_W
+const ROAD_CORNER_ITEM_NAME := &"road_1_corner"
+const ROAD_JUNCTION_ITEM_NAME := &"road_1_junction"
+const ROAD_STRAIGHT_ITEM_NAME := &"road_1_straight"
+const ROAD_TJUNCTION_ITEM_NAME := &"road_1_Tjunction"
+const ROAD_CORNER_ROTATION_OFFSET := 0
+const ROAD_STRAIGHT_ROTATION_OFFSET := 0
+const ROAD_TJUNCTION_ROTATION_OFFSET := 0
+const DEFAULT_BUILDING_FOOTPRINT_CELLS := Vector2i(4, 4)
+const PROTECTED_BORDER_MODULES := 1
+const KEEP_CENTER_CROSS := true
+const PRESERVE_MAIN_INTERSECTIONS := true
+const MIN_LARGE_BLOCK_MODULES := 4
 
 ## GridMap that receives road tiles. Its MeshLibrary must contain the named road items below.
 @export var roads_grid_map: GridMap
@@ -47,50 +59,22 @@ const ROAD_JUNCTION_MASK := DIR_N | DIR_E | DIR_S | DIR_W
 @export_range(0.0, 1.0, 0.01) var road_gap_chance: float = 0.08
 ## Chance to add stair-step road paths between main grid intersections. Higher values add more jogged, organic streets.
 @export_range(0.0, 1.0, 0.01) var stair_step_chance: float = 0.28
-## Number of modules near the city edge that should not be removed by road_gap_chance.
-@export_range(0, 4, 1) var protected_border_modules: int = 1
-## If true, keeps a horizontal and vertical main road through the city center.
-@export var keep_center_cross: bool = true
-## If true, keeps each base-grid intersection and its immediate arms so 4-way junctions are not accidentally pruned.
-@export var preserve_main_intersections: bool = true
-
-@export_group("Road Item Names")
-## MeshLibrary item name for a road corner. The base orientation is configured by ROAD_CORNER_MASK in this script.
-@export var road_corner_item_name: StringName = &"road_1_corner"
-## MeshLibrary item name for a 4-way road junction.
-@export var road_junction_item_name: StringName = &"road_1_junction"
-## MeshLibrary item name for a straight road. Its base orientation is vertical on GridMap Z.
-@export var road_straight_item_name: StringName = &"road_1_straight"
-## MeshLibrary item name for a T-junction road. The base orientation points right, connecting north/east/south.
-@export var road_tjunction_item_name: StringName = &"road_1_Tjunction"
-## Extra quarter-turns applied to every corner road after connection matching. Use this if the mesh import orientation differs.
-@export_range(0, 3, 1) var road_corner_rotation_offset: int = 0
-## Extra quarter-turns applied to every straight road after connection matching. Use this if vertical/horizontal roads are swapped.
-@export_range(0, 3, 1) var road_straight_rotation_offset: int = 0
-## Extra quarter-turns applied to every T-junction after connection matching. Use this if T-roads face the wrong way.
-@export_range(0, 3, 1) var road_tjunction_rotation_offset: int = 0
+## Chance to carve road-free superblocks after the normal road network is built. Higher values create larger empty lots for big buildings.
+@export_range(0.0, 1.0, 0.01) var road_free_lot_chance: float = 0.12
+## Width and depth, in modules, of each road-free superblock carved by road_free_lot_chance.
+@export_range(1, 8, 1) var road_free_lot_size_modules: int = 3
 
 @export_group("Building Placement")
-## Chance per placement attempt to try a building. At 1.0 every attempt is used, but placement can still fail due to occupancy.
+## Chance per buildable module to try one building. Placement can still fail if no building footprint fits.
 @export_range(0.0, 1.0, 0.01) var building_density: float = 0.78
-## Placement attempts per non-road module. Higher values fill more buildings, especially with small footprints.
-@export_range(1, 16, 1) var building_attempts_per_block: int = 4
-## If true, stops after placing one building in a module. Keep enabled for city blocks with one main building footprint.
-@export var one_building_per_module: bool = true
-## If true, buildings are placed at the center of their module. If false, placement is randomized inside the module.
-@export var center_buildings_in_module: bool = true
-## Fallback building footprint width in GridMap cells when mesh AABB sizing is disabled or unavailable.
-@export_range(1, 64, 1) var default_building_width_cells: int = 4
-## Fallback building footprint depth in GridMap cells when mesh AABB sizing is disabled or unavailable.
-@export_range(1, 64, 1) var default_building_depth_cells: int = 4
+## Chance for a multi-module open block to get one centered large building before smaller per-module buildings are placed.
+@export_range(0.0, 1.0, 0.01) var large_block_building_chance: float = 0.25
+## If true, chooses the largest building candidate that fits the block before falling back to smaller buildings.
+@export var prefer_larger_buildings: bool = true
 ## Empty cells reserved around each placed building before trying another building.
 @export_range(0, 16, 1) var building_spacing_cells: int = 1
-## Upper limit for generated building occupancy in GridMap cells. Set to 0 to use the full measured or fallback footprint.
-@export_range(0, 32, 1) var max_building_footprint_cells: int = 0
-## If true, estimates each centered building footprint from its mesh AABB before applying the max footprint cap.
-@export var use_mesh_aabb_for_building_size: bool = true
-## Optional allow-list of building MeshLibrary item names. Empty means any building item may be used.
-@export var allowed_building_item_names: PackedStringArray = PackedStringArray()
+## Extra cells added to each measured building footprint during overlap checks. Raise this if roofs/walls still clip.
+@export_range(0, 16, 1) var building_footprint_padding_cells: int = 0
 
 @export_group("Actions")
 ## Clears both GridMaps and applies a newly generated city with the current inspector settings.
@@ -149,10 +133,10 @@ func _validate_grid_maps() -> bool:
 
 func _resolve_road_items() -> Dictionary:
 	var ids := {
-		"corner": _find_item_id(roads_grid_map.mesh_library, road_corner_item_name),
-		"junction": _find_item_id(roads_grid_map.mesh_library, road_junction_item_name),
-		"straight": _find_item_id(roads_grid_map.mesh_library, road_straight_item_name),
-		"tjunction": _find_item_id(roads_grid_map.mesh_library, road_tjunction_item_name),
+		"corner": _find_item_id(roads_grid_map.mesh_library, ROAD_CORNER_ITEM_NAME),
+		"junction": _find_item_id(roads_grid_map.mesh_library, ROAD_JUNCTION_ITEM_NAME),
+		"straight": _find_item_id(roads_grid_map.mesh_library, ROAD_STRAIGHT_ITEM_NAME),
+		"tjunction": _find_item_id(roads_grid_map.mesh_library, ROAD_TJUNCTION_ITEM_NAME),
 	}
 
 	for key in ids:
@@ -174,6 +158,8 @@ func _build_road_module_set() -> Dictionary:
 	_prune_roads(roads)
 	_repair_main_intersections(roads, interval)
 	_add_stair_steps(roads, interval)
+	_carve_road_free_lots(roads, interval)
+	_remove_dead_end_roads(roads)
 
 	return roads
 
@@ -201,22 +187,105 @@ func _add_stair_path(roads: Dictionary, from_pos: Vector2i, to_pos: Vector2i, ho
 	var step := Vector2i(_int_sign(to_pos.x - from_pos.x), _int_sign(to_pos.y - from_pos.y))
 	var current := from_pos
 	var move_x_next := horizontal_first
+	var run_length := maxi(2, int(ceil(float(maxi(abs(to_pos.x - from_pos.x), abs(to_pos.y - from_pos.y))) * 0.5)))
 	roads[current] = true
 
 	while current != to_pos:
-		if move_x_next and current.x != to_pos.x:
-			current.x += step.x
-		elif not move_x_next and current.y != to_pos.y:
-			current.y += step.y
-		elif current.x != to_pos.x:
-			current.x += step.x
-		elif current.y != to_pos.y:
-			current.y += step.y
+		if move_x_next:
+			current = _add_stair_run(roads, current, Vector2i(step.x, 0), run_length, to_pos)
+			current = _add_stair_run(roads, current, Vector2i(0, step.y), run_length, to_pos)
+		else:
+			current = _add_stair_run(roads, current, Vector2i(0, step.y), run_length, to_pos)
+			current = _add_stair_run(roads, current, Vector2i(step.x, 0), run_length, to_pos)
 
+		move_x_next = not move_x_next
+
+
+func _add_stair_run(
+	roads: Dictionary,
+	from_pos: Vector2i,
+	step: Vector2i,
+	max_steps: int,
+	to_pos: Vector2i
+) -> Vector2i:
+	if step == Vector2i.ZERO:
+		return from_pos
+
+	var current := from_pos
+	for _i in range(max_steps):
+		if step.x != 0 and current.x == to_pos.x:
+			break
+		if step.y != 0 and current.y == to_pos.y:
+			break
+
+		current += step
 		if _is_in_city(current):
 			roads[current] = true
 
-		move_x_next = not move_x_next
+	return current
+
+
+func _carve_road_free_lots(roads: Dictionary, interval: int) -> void:
+	var chance := _float_or(road_free_lot_chance, 0.12)
+	if chance <= 0.0 or module_width < 3 or module_depth < 3:
+		return
+
+	var lot_size := maxi(1, _int_or(road_free_lot_size_modules, 3))
+	var before_center := int(floor(float(lot_size - 1) * 0.5))
+	var after_center := lot_size - before_center - 1
+
+	for x in range(interval, module_width - interval, interval):
+		for z in range(interval, module_depth - interval, interval):
+			if _rng.randf() > chance:
+				continue
+
+			var center := Vector2i(x, z)
+			for rx in range(center.x - before_center, center.x + after_center + 1):
+				for rz in range(center.y - before_center, center.y + after_center + 1):
+					var module_pos := Vector2i(rx, rz)
+					if _can_carve_road_free_lot_cell(module_pos):
+						roads.erase(module_pos)
+
+
+func _can_carve_road_free_lot_cell(module_pos: Vector2i) -> bool:
+	if not _is_in_city(module_pos):
+		return false
+
+	var border := PROTECTED_BORDER_MODULES
+	if module_pos.x < border or module_pos.y < border:
+		return false
+	if module_pos.x >= module_width - border or module_pos.y >= module_depth - border:
+		return false
+
+	return not (KEEP_CENTER_CROSS and _is_center_cross_module(module_pos))
+
+
+func _remove_dead_end_roads(roads: Dictionary) -> void:
+	var changed := true
+	while changed:
+		changed = false
+		var to_remove := []
+
+		for module_pos_variant in roads.keys():
+			var module_pos: Vector2i = module_pos_variant
+			if _is_dead_end_cleanup_protected(module_pos):
+				continue
+			if _road_neighbor_count(roads, module_pos) <= 1:
+				to_remove.append(module_pos)
+
+		for module_pos in to_remove:
+			roads.erase(module_pos)
+			changed = true
+
+
+func _is_dead_end_cleanup_protected(module_pos: Vector2i) -> bool:
+	var border := PROTECTED_BORDER_MODULES
+	if module_pos.x < border or module_pos.y < border:
+		return true
+	if module_pos.x >= module_width - border or module_pos.y >= module_depth - border:
+		return true
+
+	return KEEP_CENTER_CROSS and _is_center_cross_module(module_pos)
 
 
 func _prune_roads(roads: Dictionary) -> void:
@@ -235,22 +304,20 @@ func _prune_roads(roads: Dictionary) -> void:
 
 func _protected_road_modules() -> Dictionary:
 	var protected := {}
-	var border := _int_or(protected_border_modules, 1)
+	var border := PROTECTED_BORDER_MODULES
 	for x in range(module_width):
 		for z in range(module_depth):
 			var module_pos := Vector2i(x, z)
 			if x < border or z < border or x >= module_width - border or z >= module_depth - border:
 				protected[module_pos] = true
 
-	if keep_center_cross:
-		var center_x := int(floor(float(module_width) * 0.5))
-		var center_z := int(floor(float(module_depth) * 0.5))
+	if KEEP_CENTER_CROSS:
 		for x in range(module_width):
-			protected[Vector2i(x, center_z)] = true
+			protected[Vector2i(x, _center_module_z())] = true
 		for z in range(module_depth):
-			protected[Vector2i(center_x, z)] = true
+			protected[Vector2i(_center_module_x(), z)] = true
 
-	if preserve_main_intersections:
+	if PRESERVE_MAIN_INTERSECTIONS:
 		var interval := maxi(road_interval_modules, 1)
 		for x in range(0, module_width, interval):
 			for z in range(0, module_depth, interval):
@@ -265,7 +332,7 @@ func _protected_road_modules() -> Dictionary:
 
 
 func _repair_main_intersections(roads: Dictionary, interval: int) -> void:
-	if not preserve_main_intersections:
+	if not PRESERVE_MAIN_INTERSECTIONS:
 		return
 
 	for x in range(0, module_width, interval):
@@ -295,6 +362,18 @@ func _is_in_city(module_pos: Vector2i) -> bool:
 	return module_pos.x >= 0 and module_pos.y >= 0 and module_pos.x < module_width and module_pos.y < module_depth
 
 
+func _is_center_cross_module(module_pos: Vector2i) -> bool:
+	return module_pos.x == _center_module_x() or module_pos.y == _center_module_z()
+
+
+func _center_module_x() -> int:
+	return int(floor(float(module_width) * 0.5))
+
+
+func _center_module_z() -> int:
+	return int(floor(float(module_depth) * 0.5))
+
+
 func _apply_roads(road_modules: Dictionary, road_ids: Dictionary, origin: Vector2i, occupied: Dictionary) -> void:
 	var clearance := _effective_building_clearance()
 	for module_pos_variant in road_modules.keys():
@@ -317,6 +396,9 @@ func _apply_buildings(origin: Vector2i, occupied: Dictionary) -> void:
 		_push_status("No building items available.")
 		return
 
+	var claimed_modules := {}
+	_apply_large_block_buildings(origin, occupied, building_ids, claimed_modules)
+
 	for mx in range(module_width):
 		for mz in range(module_depth):
 			var module_pos := Vector2i(mx, mz)
@@ -324,23 +406,58 @@ func _apply_buildings(origin: Vector2i, occupied: Dictionary) -> void:
 
 			if _road_modules.has(module_key):
 				continue
+			if claimed_modules.has(module_key):
+				continue
 
-			var attempts := maxi(1, _int_or(building_attempts_per_block, 6))
-			for _attempt in range(attempts):
-				if _rng.randf() > building_density:
-					continue
+			if _rng.randf() > building_density:
+				continue
 
-				var item_id := int(building_ids[_rng.randi_range(0, building_ids.size() - 1)])
-				var rotation_quarters := _rng.randi_range(0, 3)
-				var bounds := _item_bounds_cells(buildings_grid_map, item_id, rotation_quarters)
-				var placed_cell := _building_cell_for_module(module_pos, origin, bounds)
+			var candidate := _pick_building_candidate(module_pos, origin, occupied, building_ids)
+			if candidate.is_empty():
+				continue
 
-				if _bounds_are_free(occupied, placed_cell, bounds):
-					var orientation := _orthogonal_y(buildings_grid_map, rotation_quarters)
-					buildings_grid_map.set_cell_item(Vector3i(placed_cell.x, 0, placed_cell.y), item_id, orientation)
-					_mark_bounds(occupied, placed_cell, bounds, building_spacing_cells)
-					if one_building_per_module:
-						break
+			var item_id := int(candidate["item_id"])
+			var rotation_quarters := int(candidate["rotation_quarters"])
+			var bounds: Rect2i = candidate["bounds"]
+			var placed_cell: Vector2i = candidate["placed_cell"]
+			var orientation := _orthogonal_y(buildings_grid_map, rotation_quarters)
+			buildings_grid_map.set_cell_item(Vector3i(placed_cell.x, 0, placed_cell.y), item_id, orientation)
+			_mark_bounds(occupied, placed_cell, bounds, building_spacing_cells)
+
+
+func _apply_large_block_buildings(
+	origin: Vector2i,
+	occupied: Dictionary,
+	building_ids: Array[int],
+	claimed_modules: Dictionary
+) -> void:
+	var chance := _float_or(large_block_building_chance, 0.25)
+	if chance <= 0.0:
+		return
+
+	var min_large_area := _minimum_large_building_area()
+	for block_variant in _open_module_components():
+		var block: Array = block_variant
+		if block.size() < MIN_LARGE_BLOCK_MODULES:
+			continue
+		if _rng.randf() > chance:
+			continue
+
+		var center_cell := _block_center_cell(block, origin)
+		var candidate := _pick_building_candidate_at_center(center_cell, occupied, building_ids, min_large_area)
+		if candidate.is_empty():
+			continue
+
+		var item_id := int(candidate["item_id"])
+		var rotation_quarters := int(candidate["rotation_quarters"])
+		var bounds: Rect2i = candidate["bounds"]
+		var placed_cell: Vector2i = candidate["placed_cell"]
+		var orientation := _orthogonal_y(buildings_grid_map, rotation_quarters)
+		buildings_grid_map.set_cell_item(Vector3i(placed_cell.x, 0, placed_cell.y), item_id, orientation)
+		_mark_bounds(occupied, placed_cell, bounds, building_spacing_cells)
+
+		for module_pos in block:
+			claimed_modules[module_pos] = true
 
 
 func _road_connection_mask(module_pos: Vector2i, road_modules: Dictionary) -> int:
@@ -361,7 +478,7 @@ func _road_tile_for_mask(mask: int, road_ids: Dictionary) -> Dictionary:
 		return {"item_id": road_ids["junction"], "orientation": 0, "rotation_quarters": 0}
 
 	if _bit_count(mask) == 3:
-		var tjunction_rotation := _road_rotation(_rotation_to_match(ROAD_TJUNCTION_MASK, mask), road_tjunction_rotation_offset)
+		var tjunction_rotation := _road_rotation(_rotation_to_match(ROAD_TJUNCTION_MASK, mask), ROAD_TJUNCTION_ROTATION_OFFSET)
 		return {
 			"item_id": road_ids["tjunction"],
 			"orientation": _orthogonal_y(roads_grid_map, -tjunction_rotation),
@@ -370,21 +487,21 @@ func _road_tile_for_mask(mask: int, road_ids: Dictionary) -> Dictionary:
 
 	if _bit_count(mask) == 2:
 		if mask == ROAD_STRAIGHT_MASK:
-			var straight_ns_rotation := _road_rotation(0, road_straight_rotation_offset)
+			var straight_ns_rotation := _road_rotation(0, ROAD_STRAIGHT_ROTATION_OFFSET)
 			return {
 				"item_id": road_ids["straight"],
 				"orientation": _orthogonal_y(roads_grid_map, straight_ns_rotation),
 				"rotation_quarters": straight_ns_rotation,
 			}
 		if mask == (DIR_E | DIR_W):
-			var straight_ew_rotation := _road_rotation(1, road_straight_rotation_offset)
+			var straight_ew_rotation := _road_rotation(1, ROAD_STRAIGHT_ROTATION_OFFSET)
 			return {
 				"item_id": road_ids["straight"],
 				"orientation": _orthogonal_y(roads_grid_map, straight_ew_rotation),
 				"rotation_quarters": straight_ew_rotation,
 			}
 
-		var corner_rotation := _road_rotation(_rotation_to_match(ROAD_CORNER_MASK, mask), road_corner_rotation_offset)
+		var corner_rotation := _road_rotation(_rotation_to_match(ROAD_CORNER_MASK, mask), ROAD_CORNER_ROTATION_OFFSET)
 		return {
 			"item_id": road_ids["corner"],
 			"orientation": _orthogonal_y(roads_grid_map, corner_rotation),
@@ -392,7 +509,7 @@ func _road_tile_for_mask(mask: int, road_ids: Dictionary) -> Dictionary:
 		}
 
 	if _bit_count(mask) == 1:
-		var straight_rotation := _road_rotation(0 if mask & (DIR_N | DIR_S) else 1, road_straight_rotation_offset)
+		var straight_rotation := _road_rotation(0 if mask & (DIR_N | DIR_S) else 1, ROAD_STRAIGHT_ROTATION_OFFSET)
 		return {
 			"item_id": road_ids["straight"],
 			"orientation": _orthogonal_y(roads_grid_map, straight_rotation),
@@ -436,34 +553,148 @@ func _building_item_ids() -> Array[int]:
 	var library := buildings_grid_map.mesh_library
 
 	for item_id in library.get_item_list():
-		var item_name := String(library.get_item_name(item_id))
-		if allowed_building_item_names.is_empty() or allowed_building_item_names.has(item_name):
-			ids.append(item_id)
+		ids.append(item_id)
 
 	return ids
 
 
-func _item_bounds_cells(grid_map: GridMap, item_id: int, rotation_quarters: int) -> Rect2i:
-	var default_size := Vector2i(default_building_width_cells, default_building_depth_cells)
-	var bounds := _centered_bounds(default_size)
-	var mesh := grid_map.mesh_library.get_item_mesh(item_id)
-	if mesh != null and use_mesh_aabb_for_building_size:
-		var aabb := mesh.get_aabb()
-		var cell_size := grid_map.cell_size
-		var size := Vector2i(
-			maxi(1, ceili(aabb.size.x / cell_size.x)),
-			maxi(1, ceili(aabb.size.z / cell_size.z))
-		)
-		bounds = _centered_bounds(size)
+func _open_module_components() -> Array:
+	var components := []
+	var visited := {}
+	var offsets := [Vector2i(0, -1), Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0)]
 
-	var max_footprint := _int_or(max_building_footprint_cells, 0)
-	if max_footprint > 0 and (bounds.size.x > max_footprint or bounds.size.y > max_footprint):
-		bounds = _centered_bounds(
-			Vector2i(
-				mini(bounds.size.x, max_footprint),
-				mini(bounds.size.y, max_footprint)
-			)
+	for mx in range(module_width):
+		for mz in range(module_depth):
+			var start := Vector2i(mx, mz)
+			if visited.has(start) or _road_modules.has(start):
+				continue
+
+			var component := []
+			var queue := [start]
+			visited[start] = true
+
+			while not queue.is_empty():
+				var current: Vector2i = queue.pop_back()
+				component.append(current)
+
+				for offset in offsets:
+					var neighbor = current + offset
+					if not _is_in_city(neighbor):
+						continue
+					if visited.has(neighbor) or _road_modules.has(neighbor):
+						continue
+
+					visited[neighbor] = true
+					queue.append(neighbor)
+
+			components.append(component)
+
+	return components
+
+
+func _block_center_cell(block: Array, origin: Vector2i) -> Vector2i:
+	var min_module := Vector2i(2147483647, 2147483647)
+	var max_module := Vector2i(-2147483648, -2147483648)
+
+	for module_pos_variant in block:
+		var module_pos: Vector2i = module_pos_variant
+		min_module.x = mini(min_module.x, module_pos.x)
+		min_module.y = mini(min_module.y, module_pos.y)
+		max_module.x = maxi(max_module.x, module_pos.x)
+		max_module.y = maxi(max_module.y, module_pos.y)
+
+	var min_cell := _module_center_cell(min_module, origin)
+	var max_cell := _module_center_cell(max_module, origin)
+	return Vector2i(
+		int(round(float(min_cell.x + max_cell.x) * 0.5)),
+		int(round(float(min_cell.y + max_cell.y) * 0.5))
+	)
+
+
+func _pick_building_candidate(
+	module_pos: Vector2i,
+	origin: Vector2i,
+	occupied: Dictionary,
+	building_ids: Array[int]
+) -> Dictionary:
+	return _pick_building_candidate_at_center(
+		_module_center_cell(module_pos, origin),
+		occupied,
+		building_ids,
+		0
+	)
+
+
+func _pick_building_candidate_at_center(
+	center_cell: Vector2i,
+	occupied: Dictionary,
+	building_ids: Array[int],
+	min_area: int
+) -> Dictionary:
+	var candidates := []
+
+	for item_id in building_ids:
+		var rotation_start := _rng.randi_range(0, 3)
+		for rotation_index in range(4):
+			var rotation_quarters := posmod(rotation_start + rotation_index, 4)
+			var bounds := _item_bounds_cells(buildings_grid_map, item_id, rotation_quarters)
+			var placed_cell := _building_cell_for_center_cell(center_cell, bounds)
+			var area := bounds.size.x * bounds.size.y
+
+			if min_area > 0 and area < min_area:
+				continue
+
+			if _bounds_are_free(occupied, placed_cell, bounds):
+				candidates.append({
+					"item_id": item_id,
+					"rotation_quarters": rotation_quarters,
+					"bounds": bounds,
+					"placed_cell": placed_cell,
+					"area": area,
+				})
+				break
+
+	if candidates.is_empty():
+		return {}
+
+	if not prefer_larger_buildings:
+		return candidates[_rng.randi_range(0, candidates.size() - 1)]
+
+	var largest_area := 0
+	for candidate in candidates:
+		largest_area = maxi(largest_area, int(candidate["area"]))
+
+	var largest_candidates := []
+	for candidate in candidates:
+		if int(candidate["area"]) == largest_area:
+			largest_candidates.append(candidate)
+
+	return largest_candidates[_rng.randi_range(0, largest_candidates.size() - 1)]
+
+
+func _minimum_large_building_area() -> int:
+	return maxi(16, int(round(float(road_stride_cells * road_stride_cells) * 0.5)))
+
+
+func _item_bounds_cells(grid_map: GridMap, item_id: int, rotation_quarters: int) -> Rect2i:
+	var bounds := _centered_bounds(DEFAULT_BUILDING_FOOTPRINT_CELLS)
+	var mesh := grid_map.mesh_library.get_item_mesh(item_id)
+	if mesh != null:
+		var aabb := _transformed_aabb(mesh.get_aabb(), grid_map.mesh_library.get_item_mesh_transform(item_id))
+		var cell_size := grid_map.cell_size
+		var min_cell := Vector2i(
+			floori(aabb.position.x / cell_size.x),
+			floori(aabb.position.z / cell_size.z)
 		)
+		var max_cell := Vector2i(
+			ceili((aabb.position.x + aabb.size.x) / cell_size.x),
+			ceili((aabb.position.z + aabb.size.z) / cell_size.z)
+		)
+		bounds = Rect2i(min_cell, Vector2i(maxi(1, max_cell.x - min_cell.x), maxi(1, max_cell.y - min_cell.y)))
+
+	var padding := maxi(0, _int_or(building_footprint_padding_cells, 0))
+	if padding > 0:
+		bounds = _padded_bounds(bounds, padding)
 
 	return _rotated_bounds(bounds, rotation_quarters)
 
@@ -477,6 +708,13 @@ func _centered_bounds(size: Vector2i) -> Rect2i:
 	return Rect2i(
 		Vector2i(-int(floor(float(size.x) * 0.5)), -int(floor(float(size.y) * 0.5))),
 		size
+	)
+
+
+func _padded_bounds(bounds: Rect2i, padding: int) -> Rect2i:
+	return Rect2i(
+		bounds.position - Vector2i(padding, padding),
+		bounds.size + Vector2i(padding * 2, padding * 2)
 	)
 
 
@@ -515,15 +753,18 @@ func _rotate_cell_offset(offset: Vector2i, rotation_quarters: int) -> Vector2i:
 
 func _building_cell_for_module(module_pos: Vector2i, origin: Vector2i, bounds: Rect2i) -> Vector2i:
 	var center_cell := _module_center_cell(module_pos, origin)
-	if center_buildings_in_module:
-		return center_cell
+	return _building_cell_for_center_cell(center_cell, bounds)
 
-	var base_cell := _module_origin_cell(module_pos, origin)
-	var free_span := maxi(1, road_stride_cells)
-	var max_offset_x := maxi(0, free_span - bounds.size.x)
-	var max_offset_z := maxi(0, free_span - bounds.size.y)
-	var offset := Vector2i(_rng.randi_range(0, max_offset_x), _rng.randi_range(0, max_offset_z))
-	return base_cell + offset - bounds.position
+
+func _building_cell_for_center_cell(center_cell: Vector2i, bounds: Rect2i) -> Vector2i:
+	return center_cell - _bounds_center_offset(bounds)
+
+
+func _bounds_center_offset(bounds: Rect2i) -> Vector2i:
+	return bounds.position + Vector2i(
+		int(floor(float(bounds.size.x) * 0.5)),
+		int(floor(float(bounds.size.y) * 0.5))
+	)
 
 
 func _effective_building_clearance() -> int:
@@ -551,11 +792,6 @@ func _module_center_cell(module_pos: Vector2i, origin: Vector2i) -> Vector2i:
 	return origin + module_pos * road_stride_cells
 
 
-func _module_origin_cell(module_pos: Vector2i, origin: Vector2i) -> Vector2i:
-	var half := int(floor(float(road_stride_cells) * 0.5))
-	return _module_center_cell(module_pos, origin) - Vector2i(half, half)
-
-
 func _mark_bounds(occupied: Dictionary, pivot_cell: Vector2i, bounds: Rect2i, clearance: int) -> void:
 	var origin := pivot_cell + bounds.position
 	for x in range(origin.x - clearance, origin.x + bounds.size.x + clearance):
@@ -570,6 +806,16 @@ func _bounds_are_free(occupied: Dictionary, pivot_cell: Vector2i, bounds: Rect2i
 			if occupied.has(Vector2i(x, z)):
 				return false
 	return true
+
+
+func _transformed_aabb(aabb: AABB, transform: Transform3D) -> AABB:
+	var result := AABB(transform * aabb.position, Vector3.ZERO)
+	var aabb_end := aabb.position + aabb.size
+	for x in [aabb.position.x, aabb_end.x]:
+		for y in [aabb.position.y, aabb_end.y]:
+			for z in [aabb.position.z, aabb_end.z]:
+				result = result.expand(transform * Vector3(x, y, z))
+	return result
 
 
 func _orthogonal_y(grid_map: GridMap, quarters: int) -> int:
