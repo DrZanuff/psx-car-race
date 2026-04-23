@@ -17,16 +17,31 @@ extends VehicleBody3D
 ## How sticky are the rear wheel. Default is 5. Try lower value for a more drift experience
 @export var rear_wheel_grip : float = 5.0
 
+@export_category("Audio Settings")
+@export var acceleration_stream : AudioStream = preload("res://assets/sound/car-sfx/car_acceleration.ogg")
+@export var idle_engine_stream : AudioStream = preload("res://assets/sound/car-sfx/car_engine_idle_loop.ogg")
+@export var engine_loop_stream : AudioStream = preload("res://assets/sound/car-sfx/car_engine_loop.ogg")
+@export var engine_loop_start_delay : float = 1.0
+@export var acceleration_sound_speed_threshold : float = 5.0
+
+
+enum EngineAudioState { IDLE, ACCELERATING }
+
 
 #local member variables
 var player_acceleration : float = 0.0
 var player_braking : float = 0.0
 var player_steer : float = 0.0
 var player_input : Vector2 = Vector2.ZERO
+var engine_audio_state : int = -1
+var was_accelerating_input : bool = false
+var engine_loop_delay_token : int = 0
 
 #an exporetd array of driving wheels so we can limit rom of each wheel when we process input
 @onready var driving_wheels : Array[VehicleWheel3D] = [$WheelBackLeft,$WheelBackRight]
 @onready var steering_wheels : Array[VehicleWheel3D] = [$WheelFrontLeft,$WheelFrontRight]
+@onready var engine_audio : AudioStreamPlayer = get_node_or_null("EngineAudio") as AudioStreamPlayer
+@onready var engine_loop_audio : AudioStreamPlayer = get_node_or_null("EngineLoopAudio") as AudioStreamPlayer
 
 
 func _ready() -> void:
@@ -35,11 +50,17 @@ func _ready() -> void:
 		wheel.wheel_friction_slip = front_wheel_grip
 	for wheel in driving_wheels:
 		wheel.wheel_friction_slip = rear_wheel_grip
+	if engine_loop_audio != null:
+		engine_loop_audio.stream = engine_loop_stream
+		engine_loop_audio.stop()
+	if engine_audio != null:
+		play_engine_audio(EngineAudioState.IDLE)
 
 
 # Called every frame. 'delta' is the elapsed time since the previous frame.
 func _physics_process(delta: float) -> void:
 	get_input(delta)
+	update_engine_audio()
 	#now process steering and braking
 	steering = player_steer
 	brake = player_braking
@@ -74,6 +95,64 @@ func get_input(delta : float):
 	else:
 		player_acceleration = 0.0
 		player_braking = 0.0
+
+func update_engine_audio() -> void:
+	if engine_audio == null and engine_loop_audio == null:
+		return
+	var accelerating_input : bool = Input.is_action_pressed("up")
+	if accelerating_input and not was_accelerating_input:
+		start_acceleration_audio()
+	elif not accelerating_input and was_accelerating_input:
+		resume_idle_audio()
+	was_accelerating_input = accelerating_input
+
+func start_acceleration_audio() -> void:
+	engine_loop_delay_token += 1
+	if engine_loop_audio != null:
+		engine_loop_audio.stop()
+	if linear_velocity.length() <= acceleration_sound_speed_threshold:
+		play_engine_audio(EngineAudioState.ACCELERATING)
+		start_engine_loop_after_delay(engine_loop_delay_token)
+	else:
+		stop_engine_audio()
+		play_engine_loop_audio()
+
+func resume_idle_audio() -> void:
+	engine_loop_delay_token += 1
+	if engine_loop_audio != null:
+		engine_loop_audio.stop()
+	play_engine_audio(EngineAudioState.IDLE)
+
+func play_engine_audio(new_state : int) -> void:
+	if engine_audio == null or engine_audio_state == new_state:
+		return
+	engine_audio_state = new_state
+	match engine_audio_state:
+		EngineAudioState.IDLE:
+			engine_audio.stream = idle_engine_stream
+		EngineAudioState.ACCELERATING:
+			engine_audio.stream = acceleration_stream
+	engine_audio.play()
+
+func stop_engine_audio() -> void:
+	if engine_audio == null:
+		return
+	engine_audio.stop()
+	engine_audio_state = -1
+
+func start_engine_loop_after_delay(delay_token : int) -> void:
+	await get_tree().create_timer(engine_loop_start_delay).timeout
+	if delay_token != engine_loop_delay_token or not Input.is_action_pressed("up"):
+		return
+	play_engine_loop_audio()
+
+func play_engine_loop_audio() -> void:
+	if engine_loop_audio == null:
+		return
+	if engine_loop_audio.stream != engine_loop_stream:
+		engine_loop_audio.stream = engine_loop_stream
+	if not engine_loop_audio.playing:
+		engine_loop_audio.play()
 
 ## helper function to see if we are moving forward
 func going_forward() -> bool:
