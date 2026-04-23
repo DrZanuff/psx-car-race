@@ -1,5 +1,7 @@
 extends VehicleBody3D
 
+class_name CarController
+
 @export_category("Car Settings")
 ## max steer in radians for the front wheels- defaults to 0.45
 @export var max_steer : float = 0.45
@@ -45,6 +47,7 @@ var engine_loop_delay_token : int = 0
 
 @onready var car_ui: CarUI = %CarUI
 
+const MPS_TO_KMH : float = 3.6
 
 func _ready() -> void:
 	#set wheel friction slip
@@ -63,6 +66,7 @@ func _ready() -> void:
 func _physics_process(delta: float) -> void:
 	get_input(delta)
 	update_engine_audio()
+	car_ui.set_speed_label(linear_velocity.length() * MPS_TO_KMH)
 	#now process steering and braking
 	steering = player_steer
 	brake = player_braking

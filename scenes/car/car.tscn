@@ -2,10 +2,11 @@
 
 [ext_resource type="PhysicsMaterial" uid="uid://cuw7isymmyyku" path="res://addons/srcoder_simplecar/assets/materials/metal_physics_material.phymat" id="1_x7uf8"]
 [ext_resource type="PackedScene" uid="uid://dk6txt31j4ipo" path="res://assets/car/car.blend" id="2_rytg7"]
-[ext_resource type="Script" uid="uid://c8iedbygfhm7n" path="res://addons/srcoder_simplecar/assets/scripts/car.gd" id="2_tcn38"]
+[ext_resource type="Script" uid="uid://cn2d81kwo0v58" path="res://scenes/car/car_controller.gd" id="2_u0012"]
 [ext_resource type="PackedScene" uid="uid://blq1lkw2so4kn" path="res://assets/wheel/wheel.blend" id="3_x7uf8"]
 [ext_resource type="AudioStream" uid="uid://b42uvy3tq7sd" path="res://assets/sound/car-sfx/car_engine_idle_loop.ogg" id="5_idle"]
 [ext_resource type="AudioStream" uid="uid://bnmxr1n2oqboe" path="res://assets/sound/car-sfx/car_engine_loop.ogg" id="6_engine"]
+[ext_resource type="PackedScene" uid="uid://cn4b5ygf64p8p" path="res://scenes/car/car-ui/car_ui.tscn" id="7_u0012"]
 
 [sub_resource type="ConvexPolygonShape3D" id="ConvexPolygonShape3D_1nhew"]
 points = PackedVector3Array(0.65, 0.249961, 1.12499, 0.620605, 0.249961, 1.19562, 0.65, 0.0499364, 1.12499, 0.65, 0.425715, 0.960743, 0.620605, 0.0499364, 1.19562, 0.54998, 0.449985, 1.17491, 0.54998, 0.249961, 1.22483, 0.124961, 0, 1.275, 0.65, 0.0499364, -1.12523, 0.65, 0.48774, 0.87987, 0.54998, 0.0499364, 1.22483, -0.550108, 0.449985, 1.17491, 0.124961, 0.174917, 1.275, 0.54998, 0.59998, 0.924799, 0.174971, 0.12498, 1.275, 0.174971, 0.0499364, 1.275, -0.125088, 0, 1.275, 0.124961, 0, -1.275, 0.620605, 0.0499364, -1.19587, 0.65, 0.249961, -1.12523, 0.65, 0.526703, 0.785767, -0.620732, 0.249961, 1.19562, -0.550108, 0.249961, 1.22483, -0.125088, 0.174917, 1.275, -0.550108, 0.59998, 0.924799, -0.65, 0.48774, 0.87987, -0.65, 0.425715, 0.960743, 0.65, 0.649917, 0.447798, 0.449961, 0.95, 0.174976, -0.175098, 0.0499364, 1.275, -0.550108, 0.0499364, 1.22483, -0.620732, 0.0499364, 1.19562, -0.65, 0.0499364, 1.12499, -0.125088, 0, -1.275, 0.174971, 0.0499364, -1.275, 0.54998, 0.0499364, -1.22508, 0.620605, 0.249961, -1.19587, 0.54998, 0.449985, -1.22508, 0.65, 0.425715, -0.910821, -0.65, 0.249961, 1.12499, -0.175098, 0.12498, 1.275, -0.65, 0.649917, 0.447798, -0.65, 0.526703, 0.785767, -0.450088, 0.95, 0.174976, 0.65, 0.649917, 0.347705, 0.449961, 0.95, -0.525176, -0.65, 0.0499364, -1.12523, -0.620732, 0.0499364, -1.19587, -0.550108, 0.0499364, -1.22508, -0.175098, 0.0499364, -1.275, 0.174971, 0.12498, -1.275, 0.124961, 0.174917, -1.275, -0.550108, 0.449985, -1.22508, 0.54998, 0.649917, -0.825206, 0.65, 0.48774, -0.830198, -0.65, 0.649917, 0.347705, -0.450088, 0.95, -0.525176, 0.65, 0.539908, -0.635004, 0.65, 0.526703, -0.736095, -0.65, 0.249961, -1.12523, -0.620732, 0.249961, -1.19587, -0.175098, 0.12498, -1.275, -0.125088, 0.174917, -1.275, -0.65, 0.425715, -0.910821, -0.65, 0.48774, -0.830198, -0.550108, 0.649917, -0.825206, -0.65, 0.539908, -0.635004, -0.65, 0.526703, -0.736095)
@@ -13,7 +14,7 @@ points = PackedVector3Array(0.65, 0.249961, 1.12499, 0.620605, 0.249961, 1.19562
 [node name="Car" type="VehicleBody3D" unique_id=2043055513]
 collision_layer = 2
 physics_material_override = ExtResource("1_x7uf8")
-script = ExtResource("2_tcn38")
+script = ExtResource("2_u0012")
 
 [node name="CarModel" parent="." unique_id=1777388840 instance=ExtResource("2_rytg7")]
 transform = Transform3D(0.5, 0, 0, 0, 0.5, 0, 0, 0, 0.5, 0, 0, 0)
@@ -94,3 +95,6 @@ transform = Transform3D(1, 0, 0, 0, -1, 8.742278e-08, 0, -8.742278e-08, -1, 0.36
 light_color = Color(0.6626761, 0.6889957, 0.32129726, 1)
 light_energy = 30.0
 spot_range = 3.0
+
+[node name="CarUI" parent="." unique_id=1581127757 instance=ExtResource("7_u0012")]
+unique_name_in_owner = true

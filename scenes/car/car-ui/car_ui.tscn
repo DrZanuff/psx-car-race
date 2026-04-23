@@ -1,0 +1,28 @@
+[gd_scene format=3 uid="uid://cn4b5ygf64p8p"]
+
+[ext_resource type="Script" uid="uid://dkyu04rtm270d" path="res://scenes/car/car-ui/car_ui.gd" id="1_spofo"]
+
+[node name="CarUI" type="MarginContainer" unique_id=1581127757]
+custom_minimum_size = Vector2(100, 100)
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -206.0
+offset_top = -114.0
+grow_horizontal = 0
+grow_vertical = 0
+mouse_filter = 2
+script = ExtResource("1_spofo")
+
+[node name="CenterContainer" type="CenterContainer" parent="." unique_id=604381649]
+layout_mode = 2
+
+[node name="SpeedLabel" type="Label" parent="CenterContainer" unique_id=393255671]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_colors/font_outline_color = Color(0, 0, 0, 1)
+theme_override_constants/outline_size = 8
+theme_override_font_sizes/font_size = 60
+text = "0km"
