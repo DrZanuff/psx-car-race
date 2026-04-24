@@ -46,6 +46,8 @@ var engine_loop_delay_token : int = 0
 @onready var engine_loop_audio : AudioStreamPlayer = get_node_or_null("EngineLoopAudio") as AudioStreamPlayer
 
 @onready var car_ui: CarUI = %CarUI
+@onready var gps: GPSArrow = %GPSArrow
+@export var current_event: RaceEvent
 
 const MPS_TO_KMH : float = 3.6
 
