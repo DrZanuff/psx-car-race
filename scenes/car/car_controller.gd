@@ -170,3 +170,11 @@ func going_forward() -> bool:
 	else:
 		return false
 	
+
+func get_current_race_node() -> Array[RaceNode]:
+	if not current_event:
+		return []
+	
+	return current_event.race_nodes
+	
+	

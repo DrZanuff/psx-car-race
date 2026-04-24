@@ -19,7 +19,7 @@ unique_name_in_owner = true
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3.4347837, 5.576772)
 
 [node name="CSGPolygon3D" type="CSGPolygon3D" parent="Pivot" unique_id=1897856712]
-transform = Transform3D(1, 0, 0, 0, -0.51247764, -0.85870063, 0, 0.85870063, -0.51247764, 0, 1.2132418, 0)
+transform = Transform3D(1, 0, 0, 0, -0.3269374, 0.94504607, 0, -0.94504607, -0.3269374, 0, 1.2132418, 0)
 polygon = PackedVector2Array(-0.0060777664, 1.987015, -0.98787785, 0.87226415, -0.37425137, 0.87226415, -0.37425137, 0.11546087, 0.47459507, 0.11546087, 0.46436787, 0.8313558, 1.006402, 0.8109014)
 depth = 0.3
 smooth_faces = true

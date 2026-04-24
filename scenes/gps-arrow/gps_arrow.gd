@@ -10,7 +10,9 @@ func set_point_target(global_target_position: Vector3) -> void:
 	_current_target = global_target_position
 
 
-func _process(delta: float) -> void:
-	var y_only_target: Vector3 = _current_target
-	y_only_target.y = _pivot.global_position.y
-	_pivot.look_at(y_only_target)
+func _process(_delta: float) -> void:
+	var to_target: Vector3 = _current_target - _pivot.global_position
+	to_target.y = 0.0
+	if to_target.length_squared() <= 0.0001:
+		return
+	_pivot.global_rotation.y = atan2(-to_target.x, -to_target.z)
