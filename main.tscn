@@ -8,8 +8,6 @@
 [ext_resource type="PackedScene" path="res://scenes/dev-tools/city_gridmap_applier.tscn" id="6_7mycd"]
 [ext_resource type="PackedScene" uid="uid://dkyf267tirno6" path="res://scenes/tree-meshes/tree_01.tscn" id="7_272bh"]
 [ext_resource type="Texture2D" uid="uid://b588qnvsu40d6" path="res://assets/tree_pack_1.1/textures/tree01.png" id="8_5vw27"]
-[ext_resource type="PackedScene" uid="uid://bidgovcw8ci66" path="res://scenes/race-event/race_event.tscn" id="9_4c57u"]
-[ext_resource type="PackedScene" uid="uid://dofteqxrgcva4" path="res://scenes/race-node/race_node.tscn" id="9_kek77"]
 
 [sub_resource type="Environment" id="Environment_0xm2m"]
 background_mode = 1
@@ -7023,7 +7021,7 @@ max_steer = 0.4
 max_torque = 1000.0
 max_brake_force = 6.0
 max_wheel_rpm = 1500.0
-current_event = NodePath("../Race1/RaceEvent")
+current_event = NodePath("")
 
 [node name="GridMapBuildings" type="GridMap" parent="." unique_id=264214223]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -1.9139972, 0)
@@ -12943,33 +12941,3 @@ multimesh = SubResource("MultiMesh_venge")
 metadata/generated_by_city_gridmap_applier = true
 
 [node name="Race1" type="Marker3D" parent="." unique_id=108203827]
-
-[node name="RaceEvent" parent="Race1" unique_id=1243562928 node_paths=PackedStringArray("race_nodes") instance=ExtResource("9_4c57u")]
-race_nodes = [NodePath("../RaceNode1"), NodePath("../RaceNode2"), NodePath("../RaceNode3"), NodePath("../RaceNode4"), NodePath("../RaceNode5"), NodePath("../RaceNode6"), NodePath("../RaceNode7"), NodePath("../RaceNode8"), NodePath("../RaceNode9")]
-
-[node name="RaceNode1" parent="Race1" unique_id=197839262 instance=ExtResource("9_kek77")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.85915613, 40.978622)
-
-[node name="RaceNode2" parent="Race1" unique_id=790484329 instance=ExtResource("9_kek77")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.85915613, 129.16957)
-
-[node name="RaceNode3" parent="Race1" unique_id=470874502 instance=ExtResource("9_kek77")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 63.56745, -0.85915613, 129.16957)
-
-[node name="RaceNode4" parent="Race1" unique_id=512567066 instance=ExtResource("9_kek77")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 63.56745, -0.85915613, 192.81708)
-
-[node name="RaceNode5" parent="Race1" unique_id=2130396272 instance=ExtResource("9_kek77")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 257.70343, -0.85915613, 192.81708)
-
-[node name="RaceNode6" parent="Race1" unique_id=1793977190 instance=ExtResource("9_kek77")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 257.70343, -0.85915613, 128.37723)
-
-[node name="RaceNode7" parent="Race1" unique_id=465469311 instance=ExtResource("9_kek77")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 127.90074, -0.85915613, 128.37723)
-
-[node name="RaceNode8" parent="Race1" unique_id=1811973343 instance=ExtResource("9_kek77")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 127.90074, -0.85915613, 0.6150055)
-
-[node name="RaceNode9" parent="Race1" unique_id=860367135 instance=ExtResource("9_kek77")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 1.4720764, -0.85915613, 0.6150055)
