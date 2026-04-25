@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="PSX Car Race"
-run/main_scene="uid://cgxldxe4g823f"
+run/main_scene="uid://btjv72rw8bjgn"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 config/icon="uid://jqhhjlmr5uyd"
 
